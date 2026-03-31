@@ -1,0 +1,51 @@
+{
+  "eigentuemer": {
+    "name": "Martin Müller",
+    "geburtsdatum": "18.01.1988",
+    "adresse": "Schweriner Str. 6, 19288 Ludwigslust",
+    "telefon": "0172 3724621",
+    "email": "office@martinmueller.dev"
+  },
+  "grundbuch": {
+    "amtsgericht": "Ludwigslust",
+    "blatt": 297,
+    "gemarkung": "Ludwigslust",
+    "flur": 12,
+    "eigentum_seit": "27.08.2020",
+    "auflassung_vom": "17.12.2019"
+  },
+  "haus": {
+    "adresse": "Schweriner Str. 6, 19288 Ludwigslust",
+    "baujahr": 1950,
+    "grundstueck_qm": 246,
+    "flurstuecke": [
+      { "nr": "137/1", "qm": 97, "nutzung": "Wohnbaufläche", "gebaeude": ["Wohnhaus", "Garage", "Schuppen"] },
+      { "nr": "138", "qm": 149, "nutzung": "Wohnen mit Handel und Dienstleistungen", "gebaeude": ["Wohnhaus"] }
+    ],
+    "wohnflaeche_qm": 74.93,
+    "etagen": 3,
+    "etagen_bezeichnung": ["EG", "OG", "DG"],
+    "heizung_aktuell": "Gas",
+    "heizung_geplant": "Wärmepumpe",
+    "sanierungsgebiet": "Altstadt Ludwigslust",
+    "denkmalschutz": true
+  },
+  "raeume": [
+    { "name": "Bad", "etage": "OG", "qm": 7.30, "heizung": "", "bodenbelag": "Fliesen", "notizen": "Nummer 8 in Flächenberechnung 1996" },
+    { "name": "Wohnzimmer", "etage": "OG", "qm": 26.75, "heizung": "", "bodenbelag": "Klick Venyl", "notizen": "Nummer 9 in Flächenberechnung 1996" },
+    { "name": "Wohnzimmernebenkammer", "etage": "OG", "qm": 3.91, "heizung": "", "bodenbelag": "Laminat", "notizen": "Nummer 10 in Flächenberechnung 1996" },
+    { "name": "Flur", "etage": "OG", "qm": 8.05, "heizung": "", "notizen": "Nummer 4 in Flächenberechnung 1996" },
+    { "name": "Schlafzimmer Senioren", "etage": "OG", "qm": 14.56, "heizung": "", "notizen": "Nummer 2 in Flächenberechnung 1996" },
+    { "name": "Kammer", "etage": "OG", "qm": 3.73, "heizung": "", "bodenbelag": "Teppich", "notizen": "Nummer 1 in Flächenberechnung 1996" },
+    { "name": "Küche/Esszimmer", "etage": "OG", "qm": 21.53, "heizung": "", "notizen": "Nummer 5 in Flächenberechnung 1996" },
+    { "name": "Flur zum DG", "etage": "OG", "qm": 2, "heizung": "", "bodenbelag": "PVC", "notizen": "Nummer 6 in Flächenberechnung 1996" },
+    { "name": "Kinderzimmer", "etage": "OG", "qm": 24.37, "heizung": "", "bodenbelag": "Klick Venyl", "notizen": "Nummer 3 in Flächenberechnung 1996" },
+    { "name": "WC", "etage": "OG", "qm": 2.90, "heizung": "", "notizen": "Nummer 7 in Flächenberechnung 1996" },
+    { "name": "Flug", "etage": "DG", "qm": 13.07, "heizung": "", "notizen": "Nummer 16 in Flächenberechnung 1996" },
+    { "name": "Arbeitszimmer", "etage": "DG", "qm": 15.64, "heizung": "", "notizen": "Nummer 12 in Flächenberechnung 1996" },
+    { "name": "WC", "etage": "DG", "qm": 4.23, "heizung": "", "notizen": "Nummer 13 in Flächenberechnung 1996" },
+    { "name": "Grosse Kinderzimmer", "etage": "DG", "qm": 13.64, "heizung": "", "notizen": "Nummer 11 in Flächenberechnung 1996" },
+    { "name": "Kleine Kinderzimmer", "etage": "DG", "qm": 10.69, "heizung": "", "notizen": "Nummer 14 in Flächenberechnung 1996" },
+    { "name": "Schlafzimmer", "etage": "DG", "qm": 17.69, "heizung": "", "notizen": "Nummer 15 in Flächenberechnung 1996" }
+  ]
+}
