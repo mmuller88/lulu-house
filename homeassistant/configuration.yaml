@@ -1,0 +1,5 @@
+# Snippet for Home Assistant — merge into your HA config or copy packages/ only.
+# See docs/homeassistant-setup.md
+
+homeassistant:
+  packages: !include_dir_named packages

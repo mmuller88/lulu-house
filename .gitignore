@@ -1,0 +1,14 @@
+# Home Assistant secrets — never commit
+homeassistant/secrets.yaml
+secrets.yaml
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local HA runtime (if testing config on same machine)
+.homeassistant/
+.storage/

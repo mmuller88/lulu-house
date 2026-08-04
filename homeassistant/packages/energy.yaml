@@ -1,0 +1,33 @@
+# Energy sensors for House Lulu — template + helpers.
+# Entity IDs below assume default names from:
+#   - ha-hoymiles-wifi (Hoymiles)
+#   - ha-ppc-smgw (SMGW)
+# Reconfigure entity_id references after integration setup.
+
+template:
+  - sensor:
+      - name: "House Lulu Consumption Power"
+        unique_id: house_lulu_consumption_power
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set grid_in = states('sensor.ppc_smgw_active_power_import') | float(0) %}
+          {% set grid_out = states('sensor.ppc_smgw_active_power_export') | float(0) %}
+          {% set pv = states('sensor.hoymiles_power') | float(0) %}
+          {{ (grid_in + pv - grid_out) | round(1) }}
+        availability: >
+          {{ has_value('sensor.ppc_smgw_active_power_import')
+             and has_value('sensor.hoymiles_power') }}
+
+      - name: "House Lulu Self Consumption Ratio"
+        unique_id: house_lulu_self_consumption_ratio
+        unit_of_measurement: "%"
+        state: >
+          {% set pv = states('sensor.hoymiles_power') | float(0) %}
+          {% set house = states('sensor.house_lulu_consumption_power') | float(0) %}
+          {% if pv <= 0 or house <= 0 %}
+            0
+          {% else %}
+            {{ ((pv / house) * 100) | min(100) | round(0) }}
+          {% endif %}
