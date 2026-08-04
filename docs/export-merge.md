@@ -15,7 +15,7 @@ python3 scripts/merge_energy_exports.py \
   --hoymiles imports/hoymiles.csv
 
 # or Docker (no local Python needed)
-docker compose run --rm energy-merge
+docker compose --profile merge run --rm energy-merge
 ```
 
 Open `output/energy-report.html` in the browser.
