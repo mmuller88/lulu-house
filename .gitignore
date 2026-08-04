@@ -9,6 +9,16 @@ secrets.yaml
 .idea/
 .vscode/
 
-# Local HA runtime (if testing config on same machine)
+# Local HA runtime (Docker mounts ./homeassistant → /config)
+homeassistant/.storage/
+homeassistant/.cloud/
+homeassistant/deps/
+homeassistant/tts/
+homeassistant/*.db
+homeassistant/*.db-shm
+homeassistant/*.db-wal
+homeassistant/*.log
+homeassistant/home-assistant.log*
+homeassistant/.HA_VERSION
+.env
 .homeassistant/
-.storage/

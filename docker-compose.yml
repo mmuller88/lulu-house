@@ -1,0 +1,18 @@
+# Home Assistant for House Lulu — config from ./homeassistant
+# Run on a host in the home LAN (Linux recommended for SMGW/HAN access).
+#
+#   cp homeassistant/secrets.yaml.example homeassistant/secrets.yaml
+#   docker compose up -d
+#
+# UI: http://localhost:8123 (host network) or see docs/docker.md
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: lulu-house-homeassistant
+    volumes:
+      - ./homeassistant:/config
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+    restart: unless-stopped
+    network_mode: host

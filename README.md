@@ -12,7 +12,9 @@ House documentation and automation for **Schweriner Str. 6, Ludwigslust**.
 | `docs/energy-context.md` | BKW + iMSys hardware IDs, status, links |
 | `docs/homeassistant-setup.md` | HA + Hoymiles + SMGW setup guide |
 | `docs/network-smgw.md` | SMGW `192.168.100.x` networking |
-| `homeassistant/` | Config snippets for HA (packages, secrets example) |
+| `docker-compose.yml` | Home Assistant container (config from `homeassistant/`) |
+| `docs/docker.md` | Docker quick start |
+| `homeassistant/` | HA config (`configuration.yaml`, `packages/`) |
 
 ## Energy dashboard (in progress)
 
@@ -24,11 +26,13 @@ Hoymiles WR (WLAN) ──┐
 SMGW / iMSys (HAN) ──┘
 ```
 
-**Secrets:** copy `homeassistant/secrets.yaml.example` → `secrets.yaml` on HA host (never commit).
-
 ```bash
+cp homeassistant/secrets.yaml.example homeassistant/secrets.yaml
 ./scripts/validate-ha-config.sh
+docker compose up -d    # on home LAN host — see docs/docker.md
 ```
+
+**Secrets:** `homeassistant/secrets.yaml` — never commit.
 
 ## External portals
 

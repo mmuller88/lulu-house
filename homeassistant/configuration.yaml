@@ -1,5 +1,13 @@
-# Snippet for Home Assistant — merge into your HA config or copy packages/ only.
-# See docs/homeassistant-setup.md
+# House Lulu — Home Assistant (Docker: ./homeassistant → /config)
+
+default_config:
 
 homeassistant:
+  name: House Lulu
+  time_zone: Europe/Berlin
+  currency: EUR
+  country: DE
   packages: !include_dir_named packages
+
+logger:
+  default: warning

@@ -4,16 +4,18 @@ Implements [#1](https://github.com/mmuller88/lulu-house/issues/1) Phases 1–4.
 
 ## Prerequisites
 
-- Home Assistant OS on Pi 4/5 or mini-PC on home LAN
-- HACS installed
+- Docker + Docker Compose on a **Linux host in the home LAN** (see `docs/docker.md`)
+- `homeassistant/secrets.yaml` from `secrets.yaml.example`
+- HACS installed (after first container start)
 - Hoymiles WR IP address (router DHCP list)
 - HAN username + password from SmartVisio portal
 
-## Phase 1 — Base install
+## Phase 1 — Base install (Docker Compose)
 
-1. Install [Home Assistant OS](https://www.home-assistant.io/installation/)
-2. Complete onboarding, enable backups
-3. Install [HACS](https://hacs.xyz/docs/setup/download)
+1. `cp homeassistant/secrets.yaml.example homeassistant/secrets.yaml`
+2. `docker compose up -d` — see `docs/docker.md`
+3. Open http://localhost:8123 — complete onboarding
+4. Install [HACS](https://hacs.xyz/docs/setup/download)
 
 ## Phase 2 — Hoymiles
 
@@ -37,7 +39,7 @@ Implements [#1](https://github.com/mmuller88/lulu-house/issues/1) Phases 1–4.
 
 ## Phase 4 — Packages + Energy Dashboard
 
-1. Copy `homeassistant/packages/energy.yaml` to HA `config/packages/`
+1. `packages/energy.yaml` is already loaded via `configuration.yaml`
 2. Edit entity IDs in `energy.yaml` to match your integration sensor names
 3. Settings → Dashboards → Energy → configure:
    - **Grid consumption:** SMGW import sensor

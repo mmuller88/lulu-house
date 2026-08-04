@@ -13,9 +13,16 @@ check_file() {
   fi
 }
 
+check_file "$ROOT/docker-compose.yml"
 check_file "$ROOT/homeassistant/configuration.yaml"
 check_file "$ROOT/homeassistant/packages/energy.yaml"
 check_file "$ROOT/homeassistant/secrets.yaml.example"
+
+if docker compose -f "$ROOT/docker-compose.yml" config >/dev/null 2>&1; then
+  echo "OK: docker compose config"
+else
+  echo "WARN: docker compose config failed (docker missing?)"
+fi
 
 if grep -q 'secrets.yaml' "$ROOT/.gitignore" 2>/dev/null; then
   echo "OK: secrets.yaml gitignored"
