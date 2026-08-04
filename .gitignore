@@ -23,9 +23,11 @@ homeassistant/.HA_VERSION
 .env
 .homeassistant/
 
-# Portal CSV exports + generated reports (keep examples)
+# Portal CSV exports + generated reports (keep examples + dated day folders)
 imports/*
 !imports/.gitkeep
 !imports/example-*.csv
+!imports/*/
+!imports/*/*.csv
 output/*
 !output/.gitkeep

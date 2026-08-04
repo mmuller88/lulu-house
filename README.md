@@ -20,18 +20,16 @@ House documentation and automation for **Schweriner Str. 6, Ludwigslust**.
 
 ## Energy reports (recommended)
 
-Merge portal exports — **no cable, no HA**:
+Merge portal exports — **no cable, no HA**. Store history in git:
 
 ```bash
-# 1. Drop exports: imports/smartvisio.csv + imports/hoymiles.csv
-# 2. Merge:
-python3 scripts/merge_energy_exports.py \
-  --smartvisio imports/smartvisio.csv \
-  --hoymiles imports/hoymiles.csv
+# 1. Drop exports: imports/YYYY-MM-DD/smartvisio.csv + hoymiles.csv
+# 2. Commit CSVs
+# 3. Merge:
+./scripts/merge-all.sh
+# or single day: ./scripts/merge-day.sh 2026-08-03
 
-# or: docker compose --profile merge run --rm energy-merge
-
-# 3. Open output/energy-report.html
+# 4. Open output/energy-report.html (switch days via buttons)
 ```
 
 See `docs/export-merge.md`. Demo: `./scripts/merge-example.sh`

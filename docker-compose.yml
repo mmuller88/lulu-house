@@ -26,8 +26,6 @@ services:
       - python3
       - scripts/merge_energy_exports.py
     command:
-      - --smartvisio
-      - imports/smartvisio.csv
-      - --hoymiles
-      - imports/hoymiles.csv
+      - --day
+      - ${DAY:?set DAY=YYYY-MM-DD}
     profiles: ["merge"]

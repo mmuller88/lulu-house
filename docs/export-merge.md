@@ -2,57 +2,78 @@
 
 Merge portal CSV exports into one table + HTML dashboard. **No HAN cable, no Home Assistant.**
 
-## Workflow
+## History layout (in git)
 
-1. Export from **SmartVisio** (Report) → save as `imports/smartvisio.csv`
-2. Export from **Hoymiles** (Report) → save as `imports/hoymiles.csv`
-3. Run merge → open `output/energy-report.html`
+Store dated exports under `imports/`:
 
-```bash
-# local Python 3.11+
-python3 scripts/merge_energy_exports.py \
-  --smartvisio imports/smartvisio.csv \
-  --hoymiles imports/hoymiles.csv
-
-# or Docker (no local Python needed)
-docker compose --profile merge run --rm energy-merge
+```
+imports/
+  2026-08-03/
+    smartvisio.csv    # SmartVisio portal export
+    hoymiles.csv      # Hoymiles portal export
+  2026-08-04/
+    smartvisio.csv
+    hoymiles.csv
 ```
 
-Open `output/energy-report.html` in the browser.
+Commit these CSVs for history. Generated reports stay in `output/` (gitignored).
+
+## Workflow
+
+1. Export from **SmartVisio** (Report) for one day → `imports/YYYY-MM-DD/smartvisio.csv`
+2. Export from **Hoymiles** (Report) for same day → `imports/YYYY-MM-DD/hoymiles.csv`
+3. Commit the two CSVs
+4. Run merge → open `output/energy-report.html` (day picker for all imported days)
+
+```bash
+./scripts/merge-all.sh          # all days → viewer
+./scripts/merge-day.sh 2026-08-03   # one day + refresh viewer
+
+# or
+python3 scripts/merge_energy_exports.py --all
+python3 scripts/merge_energy_exports.py --day 2026-08-03
+
+# Docker
+DAY=2026-08-03 docker compose --profile merge run --rm energy-merge
+```
+
+Demo with synthetic examples: `./scripts/merge-example.sh`
 
 ## Portal exports
 
 ### SmartVisio
 
 1. Login → https://smartvisio-basic.smartoptimo.de/ludwigslust/login
-2. Tab **Report** (or **Analytics** → export if available)
+2. Tab **Report** (or **Analytics** → export)
 3. Meter **1DZG0040468260**, metric **Energie bezogen**
-4. Date range (e.g. one day or week)
-5. Export **CSV**
-6. Save to `imports/smartvisio.csv`
+4. Date range (one day)
+5. Export **CSV** → save as `imports/YYYY-MM-DD/smartvisio.csv`
 
-Expected columns (names may vary slightly):
+Real export shape:
 
-- time: `Display Period - From` or similar
-- value: `Energie Bezogen` (kWh per 15 min)
+- `;` delimiter, quoted fields
+- Row 0: metadata (`1DZG0040468260 / Energie bezogen…`)
+- Row 1: headers `Time from…`, `Value`, `Unit`
+- Times: `08/03/2026 - 00:00:00` (US MM/DD/YYYY)
 
 ### Hoymiles
 
 1. Login → plant [14313640](https://global.hoymiles.com/website/plant/detail/14313640)
-2. Tab **Report**
-3. Same date range as SmartVisio
-4. Export **CSV**
-5. Save to `imports/hoymiles.csv`
+2. Tab **Report**, same date range
+3. Export **CSV** → save as `imports/YYYY-MM-DD/hoymiles.csv`
 
-Expected: timestamp + production/energy (kWh) or power (W).  
-If only power (W) is exported, the script assumes **15-min** intervals.
+Real export shape:
+
+- Header: empty first column + `Production (W)`
+- Times: `2026-08-03 00:00` (5-min samples during day)
+- Script integrates power → kWh and buckets to 15 min
 
 ## Output
 
 | File | Content |
 |------|---------|
-| `output/merged-energy.csv` | `start`, `grid_import_kwh`, `pv_production_kwh`, `house_consumption_kwh` |
-| `output/energy-report.html` | Charts + daily totals |
+| `output/energy-report.html` | **Multi-day viewer** — buttons to switch days |
+| `output/YYYY-MM-DD/merged-energy.csv` | 15-min intervals per day |
 
 **Hausverbrauch (geschätzt)** per interval:
 
@@ -68,7 +89,7 @@ house_kwh ≈ grid_import_kwh + pv_production_kwh
 python3 scripts/merge_energy_exports.py \
   --smartvisio path/to/sv.csv \
   --hoymiles path/to/hm.csv \
-  --out-dir reports/2026-08-04 \
+  --out-dir reports/custom \
   --title "BKW Test August"
 ```
 
@@ -76,7 +97,8 @@ python3 scripts/merge_energy_exports.py \
 
 | Error | Fix |
 |-------|-----|
+| missing imports/YYYY-MM-DD/smartvisio.csv | create day folder, drop exports with canonical names |
 | column not detected | open CSV, check header row matches docs above |
 | no intervals parsed | date format / empty export / wrong delimiter |
 | mismatched times | use same date range + timezone in both portals |
-| house looks wrong | PV export may be power not energy — check Hoymiles CSV units |
+| house looks wrong | check Hoymiles units (W vs kWh) |

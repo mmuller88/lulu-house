@@ -21,17 +21,18 @@
 | Mount | Flachdach Ost-West 2×2, ~10°, ballast |
 | Hoymiles Cloud plant | [14313640](https://global.hoymiles.com/website/plant/detail/14313640) |
 
+**Last updated:** 2026-08-04 (BKW West mounted)
+
 ### BKW status (2026-08-04)
 
 | Step | Status |
 |------|--------|
 | HMS-800W-2T | ✅ |
 | 2× WERCHTAY Ost (MPPT1) | ✅ |
-| 2× enjoy West (MPPT2) | ⏳ ordered |
-| Flachdach mount 4 modules | ⏳ in progress |
-| Temp ~500 W flat on roof | ⏳ partial |
-| MaStR registration | 🔲 after commissioning |
-| Netzbetreiber BKW notice | 🔲 after commissioning |
+| 2× enjoy West (MPPT2) | ✅ mounted, wired, live in Hoymiles |
+| Flachdach mount 4 modules | ✅ |
+| MaStR registration | 🔲 within 1 month of commissioning |
+| Netzbetreiber BKW notice | ✅ not required since 2024 — MaStR notifies MSB automatically |
 
 ### Wiring
 
