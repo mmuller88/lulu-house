@@ -1,6 +1,32 @@
 # SMGW network setup
 
-PPC Smart Meter Gateways are often fixed at **192.168.100.100** and not routed from the home LAN (e.g. 192.168.2.x).
+**SMGW is not on your WiFi.** SmartVisio works via **mobile/cellular → MSB cloud** (already running). Local HA access uses the **HAN Ethernet port** (RJ45 at the meter cabinet) — a **cable**, not WLAN.
+
+## Two separate paths
+
+```
+SmartVisio (cloud)     SMGW ──LTE/Mobilfunk──► MSB ──► Portal ✅ (no home LAN)
+
+Home Assistant (local) HA host ──LAN-Kabel──► HAN-Port am SMGW
+                         ▲
+                    HAN user/pass (SmartVisio tab)
+```
+
+| Path | Needs WiFi? | Needs LAN cable to SMGW? |
+|------|-------------|---------------------------|
+| SmartVisio portal | No | No |
+| Hoymiles → HA | Yes (WR in WLAN) | No |
+| SMGW → HA | No | **Yes** (HAN port) |
+
+## HAN port — what to do
+
+1. **Find the gateway** in the meter cabinet (installed with iMSys 2026-07-23).
+2. Look for **„HAN“** RJ45 (often separate from WAN/mobile).
+3. **Patch cable** from HAN → router LAN port **or** directly to the Docker/HA host NIC.
+4. Some MSBs warn: HAN **must not** be bridged to the public internet (router OK for local LAN only).
+5. Test: `curl -k --connect-timeout 3 https://192.168.100.100/` (PPC often `.100.100`; factory sometimes `192.168.1.200`).
+
+If timeout → assign a secondary IP on the HA host in the SMGW subnet (see below).
 
 ## Quick test
 
@@ -34,3 +60,9 @@ Reference: [ha-ppc-smgw-han network-setup](https://github.com/TRON4R/ha-ppc-smgw
 ## Credentials
 
 HAN username + password: SmartVisio portal → **HAN** tab → store in `homeassistant/secrets.yaml` (gitignored).
+
+## If HAN is not wired yet
+
+- **SmartVisio still works** — no local link required.
+- **HA SMGW integration waits** until HAN is cabled (Phase 3 in issue #1).
+- Unsure which port / IP? Ask Reszies (`m.reszies@stw-ludwigslust-grabow.de`) or check PPC/Theben handbook for your gateway model.
