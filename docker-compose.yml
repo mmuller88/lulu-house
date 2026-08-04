@@ -2,9 +2,8 @@
 # Run on a host in the home LAN (Linux recommended for SMGW/HAN access).
 #
 #   cp homeassistant/secrets.yaml.example homeassistant/secrets.yaml
-#   docker compose up -d
-#
 # UI: http://localhost:8123 (host network) or see docs/docker.md
+# Start: docker compose --profile ha up -d
 
 services:
   homeassistant:
@@ -16,3 +15,19 @@ services:
       TZ: ${TZ:-Europe/Berlin}
     restart: unless-stopped
     network_mode: host
+    profiles: ["ha"]
+
+  energy-merge:
+    image: python:3.12-slim
+    working_dir: /work
+    volumes:
+      - .:/work
+    entrypoint:
+      - python3
+      - scripts/merge_energy_exports.py
+    command:
+      - --smartvisio
+      - imports/smartvisio.csv
+      - --hoymiles
+      - imports/hoymiles.csv
+    profiles: ["merge"]

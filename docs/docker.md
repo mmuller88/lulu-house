@@ -6,9 +6,7 @@ Run HA from this repo. Config lives in `homeassistant/` (git); runtime state sta
 
 ```bash
 cp homeassistant/secrets.yaml.example homeassistant/secrets.yaml
-# edit secrets.yaml — Hoymiles IP, SMGW HAN creds (when on home LAN)
-
-docker compose up -d
+docker compose --profile ha up -d
 ```
 
 Open **http://localhost:8123** (first start: onboarding wizard ~1–2 min).
