@@ -361,6 +361,7 @@ def intervals_payload(intervals: list[Interval]) -> dict:
         "gridW": [item.grid_w for item in intervals],
         "pvW": [item.pv_w for item in intervals],
         "houseW": [item.house_w for item in intervals],
+        "zeroBezugSpans": _zero_bezug_spans(intervals),
         "totals": {
             "grid": round(total_grid, 2),
             "pv": round(total_pv, 2),
@@ -385,6 +386,54 @@ def _daily_totals(intervals: list[Interval]) -> dict[str, dict[str, float]]:
     return totals
 
 
+ZERO_GRID_W = 5.0
+ZERO_PV_W = 50.0
+
+
+def _zero_bezug_spans(intervals: list[Interval]) -> list[list[int]]:
+    """Index spans: Bezug ~0 W while PV is on (likely feed-in)."""
+    spans: list[list[int]] = []
+    start: int | None = None
+    for i, item in enumerate(intervals):
+        zero = (
+            item.grid_w is not None
+            and item.grid_w <= ZERO_GRID_W
+            and item.pv_w is not None
+            and item.pv_w >= ZERO_PV_W
+        )
+        if zero:
+            if start is None:
+                start = i
+        elif start is not None:
+            spans.append([start, i - 1])
+            start = None
+    if start is not None:
+        spans.append([start, len(intervals) - 1])
+    return spans
+
+
+ZERO_BEZUG_CHART_JS = """
+Chart.register({
+  id: 'zeroBezugHighlight',
+  beforeDatasetsDraw(chart, _args, opts) {
+    const spans = opts.spans || [];
+    if (!spans.length) return;
+    const { ctx, chartArea, scales: { x } } = chart;
+    const n = chart.data.labels.length;
+    const half = n > 1 ? Math.abs(x.getPixelForValue(1) - x.getPixelForValue(0)) / 2 : 8;
+    ctx.save();
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+    for (const [from, to] of spans) {
+      const x1 = x.getPixelForValue(from) - half;
+      const x2 = x.getPixelForValue(to) + half;
+      ctx.fillRect(x1, chartArea.top, x2 - x1, chartArea.bottom - chartArea.top);
+    }
+    ctx.restore();
+  },
+});
+"""
+
+
 def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     labels = [item.start.strftime("%H:%M") for item in intervals]
@@ -394,6 +443,7 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     grid_w = [item.grid_w for item in intervals]
     pv_w = [item.pv_w for item in intervals]
     house_w = [item.house_w for item in intervals]
+    zero_spans = _zero_bezug_spans(intervals)
     daily = _daily_totals(intervals)
 
     total_grid = sum(v for v in grid_kwh if v is not None)
@@ -420,6 +470,8 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     table {{ width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 12px; overflow: hidden; }}
     th, td {{ padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid #334155; }}
     h2 {{ font-size: 1rem; color: #94a3b8; margin: 0 0 0.5rem; }}
+    .chart-legend {{ font-size: 0.85rem; color: #a855f7; margin: -0.25rem 0 0.75rem; }}
+    .chart-legend span {{ display: inline-block; width: 0.9rem; height: 0.9rem; background: rgba(168, 85, 247, 0.35); border-radius: 2px; vertical-align: -0.1rem; margin-right: 0.35rem; }}
   </style>
 </head>
 <body>
@@ -432,6 +484,7 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     <div class="card">Eigenverbrauch PV<strong>{self_use_pct:.0f} %</strong></div>
   </div>
   <h2>Verbrauch &amp; Erzeugung über den Tag (W)</h2>
+  <p class="chart-legend"><span></span>Bezug ≈ 0 bei PV (evtl. Einspeisung)</p>
   <div class="chart-wrap"><canvas id="powerChart"></canvas></div>
   <h2>Energie pro 15 min (kWh)</h2>
   <div class="chart-wrap"><canvas id="intervalChart"></canvas></div>
@@ -451,6 +504,7 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     const gridW = {json.dumps(grid_w)};
     const pvW = {json.dumps(pv_w)};
     const houseW = {json.dumps(house_w)};
+    const zeroBezugSpans = {json.dumps(zero_spans)};
     const dailyLabels = {json.dumps(list(sorted(daily.keys())))};
     const dailyGrid = {json.dumps([daily[d]['grid'] for d in sorted(daily.keys())])};
     const dailyPv = {json.dumps([daily[d]['pv'] for d in sorted(daily.keys())])};
@@ -460,8 +514,20 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
       maintainAspectRatio: false,
       interaction: {{ mode: 'index', intersect: false }},
       scales: {{ x: {{ ticks: {{ maxTicksLimit: 24 }} }} }},
+      plugins: {{
+        legend: {{ position: 'bottom' }},
+        zeroBezugHighlight: {{ spans: zeroBezugSpans }},
+      }},
+    }};
+    const dailyChartOpts = {{
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {{ mode: 'index', intersect: false }},
+      scales: {{ x: {{ ticks: {{ maxTicksLimit: 24 }} }} }},
       plugins: {{ legend: {{ position: 'bottom' }} }},
     }};
+
+    {ZERO_BEZUG_CHART_JS}
 
     new Chart(document.getElementById('powerChart'), {{
       type: 'line',
@@ -498,7 +564,7 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
           {{ label: 'PV kWh', data: dailyPv, backgroundColor: '#22c55e' }},
         ],
       }},
-      options: chartOpts,
+      options: dailyChartOpts,
     }});
   </script>
 </body>
@@ -531,6 +597,8 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
     .chart-wrap {{ position: relative; height: 320px; margin-bottom: 1.5rem; background: #1e293b; border-radius: 12px; padding: 1rem; }}
     canvas {{ display: block; width: 100% !important; height: 100% !important; }}
     h2 {{ font-size: 1rem; color: #94a3b8; margin: 0 0 0.5rem; }}
+    .chart-legend {{ font-size: 0.85rem; color: #a855f7; margin: -0.25rem 0 0.75rem; }}
+    .chart-legend span {{ display: inline-block; width: 0.9rem; height: 0.9rem; background: rgba(168, 85, 247, 0.35); border-radius: 2px; vertical-align: -0.1rem; margin-right: 0.35rem; }}
   </style>
 </head>
 <body>
@@ -544,6 +612,7 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
     <div class="card">Eigenverbrauch PV<strong id="totalSelf"></strong></div>
   </div>
   <h2>Verbrauch &amp; Erzeugung über den Tag (W)</h2>
+  <p class="chart-legend"><span></span>Bezug ≈ 0 bei PV (evtl. Einspeisung)</p>
   <div class="chart-wrap"><canvas id="powerChart"></canvas></div>
   <h2>Energie pro 15 min (kWh)</h2>
   <div class="chart-wrap"><canvas id="intervalChart"></canvas></div>
@@ -555,13 +624,28 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
     let currentDay = dayKeys[dayKeys.length - 1];
     let powerChart, intervalChart, dailyChart;
 
-    const chartOpts = {{
+    function makeChartOpts(spans) {{
+      return {{
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {{ mode: 'index', intersect: false }},
+        scales: {{ x: {{ ticks: {{ maxTicksLimit: 24 }} }} }},
+        plugins: {{
+          legend: {{ position: 'bottom' }},
+          zeroBezugHighlight: {{ spans }},
+        }},
+      }};
+    }}
+
+    const dailyChartOpts = {{
       responsive: true,
       maintainAspectRatio: false,
       interaction: {{ mode: 'index', intersect: false }},
       scales: {{ x: {{ ticks: {{ maxTicksLimit: 24 }} }} }},
       plugins: {{ legend: {{ position: 'bottom' }} }},
     }};
+
+    {ZERO_BEZUG_CHART_JS}
 
     function initCharts() {{
       powerChart = new Chart(document.getElementById('powerChart'), {{
@@ -571,7 +655,7 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
           {{ label: 'PV Erzeugung (W)', data: [], borderColor: '#22c55e', tension: 0.2, spanGaps: true, pointRadius: 0 }},
           {{ label: 'Hausverbrauch (W)', data: [], borderColor: '#38bdf8', tension: 0.2, spanGaps: true, pointRadius: 0 }},
         ]}},
-        options: chartOpts,
+        options: makeChartOpts([]),
       }});
       intervalChart = new Chart(document.getElementById('intervalChart'), {{
         type: 'line',
@@ -580,7 +664,7 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
           {{ label: 'PV (kWh)', data: [], borderColor: '#22c55e', tension: 0.2, spanGaps: true, pointRadius: 0 }},
           {{ label: 'Haus (kWh)', data: [], borderColor: '#38bdf8', tension: 0.2, spanGaps: true, pointRadius: 0 }},
         ]}},
-        options: chartOpts,
+        options: makeChartOpts([]),
       }});
       dailyChart = new Chart(document.getElementById('dailyChart'), {{
         type: 'bar',
@@ -588,7 +672,7 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
           {{ label: 'Bezug kWh', data: [], backgroundColor: '#f97316' }},
           {{ label: 'PV kWh', data: [], backgroundColor: '#22c55e' }},
         ]}},
-        options: chartOpts,
+        options: dailyChartOpts,
       }});
     }}
 
@@ -601,6 +685,10 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
       document.getElementById('totalPv').textContent = d.totals.pv.toFixed(2) + ' kWh';
       document.getElementById('totalHouse').textContent = d.totals.house.toFixed(2) + ' kWh';
       document.getElementById('totalSelf').textContent = d.totals.selfUsePct + ' %';
+
+      const spans = d.zeroBezugSpans || [];
+      powerChart.options.plugins.zeroBezugHighlight.spans = spans;
+      intervalChart.options.plugins.zeroBezugHighlight.spans = spans;
 
       powerChart.data.labels = d.labels;
       powerChart.data.datasets[0].data = d.gridW;

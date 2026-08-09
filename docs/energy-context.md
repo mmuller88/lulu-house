@@ -1,7 +1,7 @@
 # Energy context — House Lulu
 
 **Site:** Schweriner Str. 6, 19288 Ludwigslust  
-**Last updated:** 2026-08-04  
+**Last updated:** 2026-08-07  
 **Tracking issue:** [#1](https://github.com/mmuller88/lulu-house/issues/1)
 
 ## Goals
@@ -50,6 +50,8 @@ West: [enjoy]—serie—[enjoy]          → MPPT2  ─┘
 | iMSys meter | **1DZG0040468260** |
 | Old meter | 1APA0198978301 |
 | iMSys installed | 2026-07-23 |
+| iMSys install cost (one-time) | **186,68 €** (~180 €; Stadtwerke Angebot 22.06.2026) |
+| iMSys MSB fee | 30 €/Jahr (50 €/Jahr with PV plant registered) |
 | SmartVisio portal | https://smartvisio-basic.smartoptimo.de/ludwigslust/login |
 | Portal token (Kd-Nr Messstelle) | **4525208** |
 | HAN credentials | SmartVisio → **HAN** tab (→ `secrets.yaml`, not in git) |
@@ -65,7 +67,21 @@ West: [enjoy]—serie—[enjoy]          → MPPT2  ─┘
 | Analytics data visible | ✅ from 2026-08-03 |
 | HAN → Home Assistant | 🔲 Phase 3 |
 
-**Observed baseline:** ~130 W night load (~0,032 kWh / 15 min on 2026-08-03).
+**Observed baseline:** quiet nights ~115–130 W (~0,029–0,032 kWh / 15 min; 2026-08-03/04). 2026-08-05 night elevated (~220 W).
+
+### Observed days (merged exports)
+
+| Day | Netzbezug | PV | Haus (est.) | Peak PV |
+|-----|-----------|-----|-------------|---------|
+| 2026-08-01 | 6,06 kWh | 3,12 kWh | 8,83 kWh | 565 W |
+| 2026-08-02 | 4,77 kWh | 4,29 kWh | 8,72 kWh | 550 W |
+| 2026-08-03 | 6,49 kWh | 4,24 kWh | 10,39 kWh | 478 W |
+| 2026-08-04 | 9,43 kWh | 2,95 kWh | 10,77 kWh | 475 W |
+| 2026-08-05 | 10,52 kWh | 3,77 kWh | 13,79 kWh | 486 W |
+| 2026-08-06 | 5,35 kWh | 3,28 kWh | 8,19 kWh | 509 W |
+| 2026-08-07 | 5,25 kWh | 1,84 kWh | 6,79 kWh | 350 W |
+
+Viewer: `output/energy-report.html` (`./scripts/merge-all.sh`).
 
 ## Data sources (no native link)
 
@@ -85,6 +101,7 @@ West: [enjoy]—serie—[enjoy]          → MPPT2  ─┘
 
 ## Related repo files
 
+- Dropbox progress (consolidated): `House Lulu/strom/Energie-Progress.md`
 - `offer-comparison-summary.md` — full PV quotes (8–10 kWp, not current BKW)
 - `waermepumpe-vergleich.md` — heat pump comparison
 - `haus-daten.json` — building data
