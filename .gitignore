@@ -31,3 +31,4 @@ imports/*
 !imports/*/*.csv
 output/*
 !output/.gitkeep
+!docs/index.html

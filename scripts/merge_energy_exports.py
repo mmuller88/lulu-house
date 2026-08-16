@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo("Europe/Berlin")
 IMPORTS_ROOT = Path("imports")
 OUTPUT_ROOT = Path("output")
+PAGES_INDEX = Path("docs/index.html")
 
 
 @dataclass(frozen=True)
@@ -766,6 +767,7 @@ def refresh_viewer(imports_root: Path = IMPORTS_ROOT) -> Path | None:
         days_data[day] = intervals_payload(merge_day_intervals(day, imports_root))
     viewer_path = OUTPUT_ROOT / "energy-report.html"
     write_viewer_html(viewer_path, days_data)
+    write_viewer_html(PAGES_INDEX, days_data)
     return viewer_path
 
 

@@ -23,10 +23,10 @@ Commit these CSVs for history. Generated reports stay in `output/` (gitignored).
 1. Export from **SmartVisio** (Report) for one day → `imports/YYYY-MM-DD/smartvisio.csv`
 2. Export from **Hoymiles** (Report) for same day → `imports/YYYY-MM-DD/hoymiles.csv`
 3. Commit the two CSVs
-4. Run merge → open `output/energy-report.html` (day picker for all imported days)
+4. Run merge → open `output/energy-report.html` or push `docs/index.html` for GitHub Pages
 
 ```bash
-./scripts/merge-all.sh          # all days → viewer
+./scripts/merge-all.sh          # all days → viewer + docs/index.html
 ./scripts/merge-day.sh 2026-08-03   # one day + refresh viewer
 
 # or
@@ -38,6 +38,14 @@ DAY=2026-08-03 docker compose --profile merge run --rm energy-merge
 ```
 
 Demo with synthetic examples: `./scripts/merge-example.sh`
+
+## GitHub Pages
+
+**URL:** https://mmuller88.github.io/lulu-house/
+
+`merge-all.sh` writes `docs/index.html`. Commit it with new imports. Repo **Settings → Pages → Build from branch → `main` → `/docs`**.
+
+Optional: `.github/workflows/pages.yml` rebuilds on push (needs Actions minutes).
 
 ## Portal exports
 
