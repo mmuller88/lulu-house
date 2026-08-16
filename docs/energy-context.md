@@ -1,7 +1,7 @@
 # Energy context — House Lulu
 
 **Site:** Schweriner Str. 6, 19288 Ludwigslust  
-**Last updated:** 2026-08-07  
+**Last updated:** 2026-08-15  
 **Tracking issue:** [#1](https://github.com/mmuller88/lulu-house/issues/1)
 
 ## Goals
@@ -80,6 +80,15 @@ West: [enjoy]—serie—[enjoy]          → MPPT2  ─┘
 | 2026-08-05 | 10,52 kWh | 3,77 kWh | 13,79 kWh | 486 W |
 | 2026-08-06 | 5,35 kWh | 3,28 kWh | 8,19 kWh | 509 W |
 | 2026-08-07 | 5,25 kWh | 1,84 kWh | 6,79 kWh | 350 W |
+| 2026-08-09 | 1,00 kWh | 3,99 kWh | 4,78 kWh | 472 W |
+| 2026-08-10 | 1,20 kWh | 1,86 kWh | 2,84 kWh | 433 W |
+| 2026-08-11 | 0,99 kWh | 3,00 kWh | 3,80 kWh | 522 W |
+| 2026-08-12 | 0,95 kWh | 4,04 kWh | 4,82 kWh | 476 W |
+| 2026-08-13 | 3,22 kWh | 3,96 kWh | 5,99 kWh | 461 W |
+| 2026-08-14 | 13,47 kWh | 3,89 kWh | 16,85 kWh | 453 W |
+| 2026-08-15 | 10,29 kWh | 3,09 kWh | 12,97 kWh | 443 W |
+
+**Missing:** 2026-08-08 — SmartVisio only (no Hoymiles export).
 
 Viewer: `output/energy-report.html` (`./scripts/merge-all.sh`).
 
