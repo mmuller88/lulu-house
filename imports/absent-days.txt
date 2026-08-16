@@ -1,0 +1,6 @@
+# Mark days as absent (vacation, away from home).
+# One YYYY-MM-DD per line. Lines starting with # are ignored.
+2026-08-09
+2026-08-10
+2026-08-11
+2026-08-12

@@ -346,6 +346,18 @@ def discover_days(imports_root: Path = IMPORTS_ROOT) -> list[str]:
     return sorted(days)
 
 
+def load_absent_days(imports_root: Path = IMPORTS_ROOT) -> set[str]:
+    path = imports_root / "absent-days.txt"
+    if not path.is_file():
+        return set()
+    absent: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        day = line.split("#", 1)[0].strip()
+        if day and re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            absent.add(day)
+    return absent
+
+
 def intervals_payload(intervals: list[Interval]) -> dict:
     grid_kwh = [item.grid_kwh for item in intervals]
     pv_kwh = [item.pv_kwh for item in intervals]
@@ -592,6 +604,10 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
     .day-nav button {{ background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.95rem; }}
     .day-nav button:hover {{ border-color: #38bdf8; }}
     .day-nav button.active {{ background: #38bdf8; color: #0f172a; border-color: #38bdf8; font-weight: 600; }}
+    .day-nav button.absent {{ border-style: dashed; border-color: #64748b; color: #94a3b8; }}
+    .day-nav button.absent.active {{ border-style: solid; color: #0f172a; }}
+    .absent-banner {{ background: #422006; border: 1px solid #ca8a04; color: #fde68a; padding: 0.5rem 1rem; border-radius: 8px; margin-bottom: 1rem; }}
+    .present-summary {{ color: #94a3b8; margin: -0.5rem 0 1rem; font-size: 0.9rem; }}
     .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }}
     .card {{ background: #1e293b; border-radius: 12px; padding: 1rem; }}
     .card strong {{ display: block; font-size: 1.4rem; margin-top: 0.25rem; }}
@@ -605,6 +621,8 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
 <body>
   <h1 id="title">House Lulu — Energy</h1>
   <p class="meta" id="meta"></p>
+  <p id="absentBanner" class="absent-banner" hidden>Abwesend — niedriger Verbrauch erwartbar, nicht in Ø „anwesend“.</p>
+  <p class="present-summary" id="presentSummary"></p>
   <nav class="day-nav" id="dayNav" aria-label="Tag auswählen"></nav>
   <div class="cards">
     <div class="card">Netzbezug<strong id="totalGrid"></strong></div>
@@ -617,13 +635,41 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
   <div class="chart-wrap"><canvas id="powerChart"></canvas></div>
   <h2>Energie pro 15 min (kWh)</h2>
   <div class="chart-wrap"><canvas id="intervalChart"></canvas></div>
-  <h2>Tageswerte (kWh)</h2>
-  <div class="chart-wrap" style="height: 200px"><canvas id="dailyChart"></canvas></div>
+  <h2>Tageswerte — alle Tage (kWh)</h2>
+  <p class="meta" style="margin-top: -0.5rem">Gestrichelt = abwesend (<code>imports/absent-days.txt</code>)</p>
+  <div class="chart-wrap" style="height: 220px"><canvas id="dailyChart"></canvas></div>
   <script>
     const daysData = {days_json};
     const dayKeys = Object.keys(daysData).sort();
     let currentDay = dayKeys[dayKeys.length - 1];
     let powerChart, intervalChart, dailyChart;
+
+    function presentDayKeys() {{
+      return dayKeys.filter((day) => !daysData[day].absent);
+    }}
+
+    function avgPresent(field) {{
+      const days = presentDayKeys();
+      if (!days.length) return 0;
+      return days.reduce((sum, day) => sum + daysData[day].totals[field], 0) / days.length;
+    }}
+
+    function updatePresentSummary() {{
+      const days = presentDayKeys();
+      const el = document.getElementById('presentSummary');
+      if (!days.length) {{
+        el.textContent = '';
+        return;
+      }}
+      el.textContent =
+        'Ø anwesend (' + days.length + ' Tage): Netzbezug ' + avgPresent('grid').toFixed(2) +
+        ' kWh · PV ' + avgPresent('pv').toFixed(2) +
+        ' kWh · Haus ' + avgPresent('house').toFixed(2) + ' kWh';
+    }}
+
+    function barColors(presentColor, absentColor) {{
+      return dayKeys.map((day) => (daysData[day].absent ? absentColor : presentColor));
+    }}
 
     function makeChartOpts(spans) {{
       return {{
@@ -669,19 +715,24 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
       }});
       dailyChart = new Chart(document.getElementById('dailyChart'), {{
         type: 'bar',
-        data: {{ labels: [], datasets: [
-          {{ label: 'Bezug kWh', data: [], backgroundColor: '#f97316' }},
-          {{ label: 'PV kWh', data: [], backgroundColor: '#22c55e' }},
-        ]}},
+        data: {{
+          labels: dayKeys.map((d) => d.slice(5)),
+          datasets: [
+            {{ label: 'Bezug kWh', data: dayKeys.map((d) => daysData[d].totals.grid), backgroundColor: barColors('#f97316', 'rgba(148,163,184,0.35)') }},
+            {{ label: 'PV kWh', data: dayKeys.map((d) => daysData[d].totals.pv), backgroundColor: barColors('#22c55e', 'rgba(34,197,94,0.25)') }},
+          ],
+        }},
         options: dailyChartOpts,
       }});
     }}
 
     function showDay(day) {{
       const d = daysData[day];
-      document.getElementById('title').textContent = 'House Lulu — ' + day;
+      const absent = !!d.absent;
+      document.getElementById('title').textContent = 'House Lulu — ' + day + (absent ? ' (abwesend)' : '');
       document.getElementById('meta').textContent =
         'SmartVisio Bezug + Hoymiles Erzeugung · ' + d.totals.intervals + ' Intervalle (15 min)';
+      document.getElementById('absentBanner').hidden = !absent;
       document.getElementById('totalGrid').textContent = d.totals.grid.toFixed(2) + ' kWh';
       document.getElementById('totalPv').textContent = d.totals.pv.toFixed(2) + ' kWh';
       document.getElementById('totalHouse').textContent = d.totals.house.toFixed(2) + ' kWh';
@@ -702,11 +753,6 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
       intervalChart.data.datasets[1].data = d.pvKwh;
       intervalChart.data.datasets[2].data = d.houseKwh;
       intervalChart.update();
-
-      dailyChart.data.labels = [day];
-      dailyChart.data.datasets[0].data = [d.totals.grid];
-      dailyChart.data.datasets[1].data = [d.totals.pv];
-      dailyChart.update();
     }}
 
     function updateNav() {{
@@ -720,7 +766,9 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.dataset.day = day;
-      btn.textContent = day;
+      btn.textContent = day.slice(5) + (daysData[day].absent ? ' ✈' : '');
+      if (daysData[day].absent) btn.classList.add('absent');
+      btn.title = daysData[day].absent ? day + ' — abwesend' : day;
       btn.addEventListener('click', () => {{
         currentDay = day;
         showDay(day);
@@ -730,6 +778,7 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
     }});
 
     initCharts();
+    updatePresentSummary();
     showDay(currentDay);
     updateNav();
   </script>
@@ -762,9 +811,12 @@ def refresh_viewer(imports_root: Path = IMPORTS_ROOT) -> Path | None:
     days = discover_days(imports_root)
     if not days:
         return None
+    absent_days = load_absent_days(imports_root)
     days_data: dict[str, dict] = {}
     for day in days:
-        days_data[day] = intervals_payload(merge_day_intervals(day, imports_root))
+        payload = intervals_payload(merge_day_intervals(day, imports_root))
+        payload["absent"] = day in absent_days
+        days_data[day] = payload
     viewer_path = OUTPUT_ROOT / "energy-report.html"
     write_viewer_html(viewer_path, days_data)
     write_viewer_html(PAGES_INDEX, days_data)

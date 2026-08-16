@@ -29,6 +29,7 @@ imports/*
 !imports/example-*.csv
 !imports/*/
 !imports/*/*.csv
+!imports/absent-days.txt
 output/*
 !output/.gitkeep
 !docs/index.html

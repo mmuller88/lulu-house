@@ -39,6 +39,19 @@ DAY=2026-08-03 docker compose --profile merge run --rm energy-merge
 
 Demo with synthetic examples: `./scripts/merge-example.sh`
 
+## Absent days
+
+Mark vacation / away days in `imports/absent-days.txt` (one `YYYY-MM-DD` per line, `#` comments ok).
+They show with ✈ in the report and are excluded from the **Ø anwesend** averages.
+
+```text
+# imports/absent-days.txt
+2026-08-09
+2026-08-10
+```
+
+Re-run `./scripts/merge-all.sh` after edits.
+
 ## GitHub Pages
 
 **URL:** https://mmuller88.github.io/lulu-house/
