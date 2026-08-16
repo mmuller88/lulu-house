@@ -90,7 +90,7 @@ West: [enjoy]—serie—[enjoy]          → MPPT2  ─┘
 
 **Missing:** 2026-08-08 — SmartVisio only (no Hoymiles export).
 
-Viewer: `output/energy-report.html` (`./scripts/merge-all.sh`).
+Viewer: [GitHub Pages](https://mmuller88.github.io/lulu-house/) · local `output/energy-report.html` (`./scripts/merge-all.sh`).
 
 ## Data sources (no native link)
 

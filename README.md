@@ -32,6 +32,8 @@ Merge portal exports — **no cable, no HA**. Store history in git:
 # 4. Open output/energy-report.html (switch days via buttons)
 ```
 
+**Live dashboard:** https://mmuller88.github.io/lulu-house/ (rebuilds on push to `main`)
+
 See `docs/export-merge.md`. Demo: `./scripts/merge-example.sh`
 
 ## Home Assistant (optional, later)

@@ -75,6 +75,8 @@ Real export shape:
 | `output/energy-report.html` | **Multi-day viewer** — buttons to switch days |
 | `output/YYYY-MM-DD/merged-energy.csv` | 15-min intervals per day |
 
+**GitHub Pages:** https://mmuller88.github.io/lulu-house/ — auto-deployed from `main` via `.github/workflows/pages.yml`.
+
 **Hausverbrauch (geschätzt)** per interval:
 
 ```
