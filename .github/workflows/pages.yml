@@ -27,13 +27,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Build energy report
         run: python3 scripts/merge_energy_exports.py --all
 
       - name: Prepare site
         run: |
-          mkdir -p _site
+          mkdir -p _site/assets
           cp output/energy-report.html _site/index.html
+          cp -R output/assets/. _site/assets/
 
       - uses: actions/configure-pages@v5
 

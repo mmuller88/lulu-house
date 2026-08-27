@@ -33,3 +33,6 @@ imports/*
 output/*
 !output/.gitkeep
 !docs/index.html
+!docs/assets/
+viewer/node_modules/
+viewer/dist/

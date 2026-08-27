@@ -23,11 +23,12 @@ House documentation and automation for **Schweriner Str. 6, Ludwigslust**.
 Merge portal exports — **no cable, no HA**. Store history in git:
 
 ```bash
-# 1. Drop exports: imports/YYYY-MM-DD/smartvisio.csv + hoymiles.csv
+# 1. Drop exports: imports/YYYY-MM-DD/ or imports/YYYY-week-WW/
 # 2. Commit CSVs
 # 3. Merge:
 ./scripts/merge-all.sh
-# or single day: ./scripts/merge-day.sh 2026-08-03
+# or: ./scripts/merge-day.sh 2026-08-03
+#      ./scripts/merge-day.sh 2026-week-34
 
 # 4. Open output/energy-report.html (switch days via buttons)
 ```

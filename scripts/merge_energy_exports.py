@@ -7,6 +7,8 @@ import argparse
 import csv
 import json
 import re
+import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +19,11 @@ TZ = ZoneInfo("Europe/Berlin")
 IMPORTS_ROOT = Path("imports")
 OUTPUT_ROOT = Path("output")
 PAGES_INDEX = Path("docs/index.html")
+VIEWER_DIR = Path("viewer")
+VIEWER_DIST = VIEWER_DIR / "dist"
+DATE_PICKER_ASSETS = VIEWER_DIST
+DAY_DIR_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+WEEK_DIR_RE = re.compile(r"\d{4}-week-\d{2}")
 
 
 @dataclass(frozen=True)
@@ -77,11 +84,32 @@ def _parse_dt(value: str) -> datetime | None:
         month, day, year, hour, minute, second = map(int, us_match.groups())
         return datetime(year, month, day, hour, minute, second, tzinfo=TZ)
 
+    # SmartVisio EU: 17/08/2026 00:00 or 17/08/2026 00:00:00
+    eu_match = re.match(
+        r"^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$",
+        text,
+    )
+    if eu_match:
+        day, month, year, hour, minute, second = eu_match.groups()
+        try:
+            return datetime(
+                int(year),
+                int(month),
+                int(day),
+                int(hour),
+                int(minute),
+                int(second or 0),
+                tzinfo=TZ,
+            )
+        except ValueError:
+            pass
+
     for fmt in (
         "%Y-%m-%d %H:%M:%S%z",
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M",
         "%d/%m/%Y %H:%M:%S",
+        "%d/%m/%Y %H:%M",
         "%d.%m.%Y %H:%M:%S",
         "%Y-%m-%dT%H:%M:%S%z",
         "%Y-%m-%dT%H:%M:%S",
@@ -336,14 +364,53 @@ def _find_import_csv(day_dir: Path, kind: str) -> Path | None:
     return None
 
 
-def discover_days(imports_root: Path = IMPORTS_ROOT) -> list[str]:
-    days: list[str] = []
+def _has_import_csvs(entry: Path) -> bool:
+    return bool(
+        _find_import_csv(entry, "smartvisio") and _find_import_csv(entry, "hoymiles")
+    )
+
+
+def discover_import_dirs(imports_root: Path = IMPORTS_ROOT) -> list[str]:
+    names: list[str] = []
     for entry in imports_root.iterdir():
-        if not entry.is_dir() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", entry.name):
+        if not entry.is_dir():
             continue
-        if _find_import_csv(entry, "smartvisio") and _find_import_csv(entry, "hoymiles"):
-            days.append(entry.name)
-    return sorted(days)
+        if not (DAY_DIR_RE.fullmatch(entry.name) or WEEK_DIR_RE.fullmatch(entry.name)):
+            continue
+        if _has_import_csvs(entry):
+            names.append(entry.name)
+    return sorted(names)
+
+
+def discover_days(imports_root: Path = IMPORTS_ROOT) -> list[str]:
+    return [n for n in discover_import_dirs(imports_root) if DAY_DIR_RE.fullmatch(n)]
+
+
+def split_by_day(intervals: list[Interval]) -> dict[str, list[Interval]]:
+    by_day: dict[str, list[Interval]] = {}
+    for item in intervals:
+        by_day.setdefault(item.start.date().isoformat(), []).append(item)
+    return by_day
+
+
+def collect_day_intervals(
+    imports_root: Path = IMPORTS_ROOT,
+) -> dict[str, list[Interval]]:
+    """Expand folders to calendar days. Named day folder > week > spillover."""
+    from_weeks: dict[str, list[Interval]] = {}
+    from_named: dict[str, list[Interval]] = {}
+    from_spill: dict[str, list[Interval]] = {}
+    for name in discover_import_dirs(imports_root):
+        split = split_by_day(merge_day_intervals(name, imports_root))
+        if WEEK_DIR_RE.fullmatch(name):
+            from_weeks.update(split)
+            continue
+        if name in split:
+            from_named[name] = split[name]
+        for day, intervals in split.items():
+            if day != name:
+                from_spill.setdefault(day, intervals)
+    return dict(sorted({**from_spill, **from_weeks, **from_named}.items()))
 
 
 def load_absent_days(imports_root: Path = IMPORTS_ROOT) -> set[str]:
@@ -380,6 +447,7 @@ def intervals_payload(intervals: list[Interval]) -> dict:
             "pv": round(total_pv, 2),
             "house": round(total_house, 2),
             "selfUsePct": round(self_use_pct),
+            "zeroBezugPct": _zero_bezug_pct(intervals),
             "intervals": len(intervals),
         },
     }
@@ -403,18 +471,30 @@ ZERO_GRID_W = 5.0
 ZERO_PV_W = 50.0
 
 
+def _is_zero_bezug_interval(item: Interval) -> bool:
+    return (
+        item.grid_w is not None
+        and item.grid_w <= ZERO_GRID_W
+        and item.pv_w is not None
+        and item.pv_w >= ZERO_PV_W
+    )
+
+
+def _zero_bezug_pct(intervals: list[Interval]) -> int:
+    """Share of PV-on 15-min slots with grid import ~0 W."""
+    pv_on = sum(
+        1 for item in intervals if item.pv_w is not None and item.pv_w >= ZERO_PV_W
+    )
+    zero = sum(1 for item in intervals if _is_zero_bezug_interval(item))
+    return round(zero / pv_on * 100) if pv_on else 0
+
+
 def _zero_bezug_spans(intervals: list[Interval]) -> list[list[int]]:
     """Index spans: Bezug ~0 W while PV is on (likely feed-in)."""
     spans: list[list[int]] = []
     start: int | None = None
     for i, item in enumerate(intervals):
-        zero = (
-            item.grid_w is not None
-            and item.grid_w <= ZERO_GRID_W
-            and item.pv_w is not None
-            and item.pv_w >= ZERO_PV_W
-        )
-        if zero:
+        if _is_zero_bezug_interval(item):
             if start is None:
                 start = i
         elif start is not None:
@@ -447,9 +527,15 @@ Chart.register({
 """
 
 
+def _interval_labels(intervals: list[Interval]) -> list[str]:
+    days = {item.start.date() for item in intervals}
+    fmt = "%m-%d %H:%M" if len(days) > 1 else "%H:%M"
+    return [item.start.strftime(fmt) for item in intervals]
+
+
 def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    labels = [item.start.strftime("%H:%M") for item in intervals]
+    labels = _interval_labels(intervals)
     grid_kwh = [item.grid_kwh for item in intervals]
     pv_kwh = [item.pv_kwh for item in intervals]
     house_kwh = [item.house_kwh for item in intervals]
@@ -463,6 +549,7 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     total_pv = sum(v for v in pv_kwh if v is not None)
     total_house = sum(v for v in house_kwh if v is not None)
     self_use_pct = (min(total_pv, total_house) / total_pv * 100) if total_pv else 0
+    zero_bezug_pct = _zero_bezug_pct(intervals)
 
     html = f"""<!DOCTYPE html>
 <html lang="de">
@@ -495,9 +582,10 @@ def write_html(path: Path, intervals: list[Interval], title: str) -> None:
     <div class="card">PV Erzeugung<strong>{total_pv:.2f} kWh</strong></div>
     <div class="card">Hausverbrauch (geschätzt)<strong>{total_house:.2f} kWh</strong></div>
     <div class="card">Eigenverbrauch PV<strong>{self_use_pct:.0f} %</strong></div>
+    <div class="card">0 Bezug (PV-Zeit)<strong>{zero_bezug_pct} %</strong></div>
   </div>
   <h2>Verbrauch &amp; Erzeugung über den Tag (W)</h2>
-  <p class="chart-legend"><span></span>Bezug ≈ 0 bei PV (evtl. Einspeisung)</p>
+  <p class="chart-legend"><span></span>Bezug ≈ 0 bei PV — {zero_bezug_pct}% der PV-Intervalle (evtl. Einspeisung)</p>
   <div class="chart-wrap"><canvas id="powerChart"></canvas></div>
   <h2>Energie pro 15 min (kWh)</h2>
   <div class="chart-wrap"><canvas id="intervalChart"></canvas></div>
@@ -590,32 +678,96 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     days_json = json.dumps(days_data)
     html = f"""<!DOCTYPE html>
-<html lang="de">
+<html lang="de" class="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>House Lulu — Energy</title>
+  <link rel="stylesheet" href="./assets/date-picker.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
-    body {{ font-family: system-ui, sans-serif; margin: 1.5rem; background: #0f172a; color: #e2e8f0; }}
-    h1 {{ margin-bottom: 0.25rem; }}
-    .meta {{ color: #94a3b8; margin-bottom: 1rem; }}
-    .day-nav {{ display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }}
-    .day-nav button {{ background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.95rem; }}
-    .day-nav button:hover {{ border-color: #38bdf8; }}
-    .day-nav button.active {{ background: #38bdf8; color: #0f172a; border-color: #38bdf8; font-weight: 600; }}
-    .day-nav button.absent {{ border-style: dashed; border-color: #64748b; color: #94a3b8; }}
-    .day-nav button.absent.active {{ border-style: solid; color: #0f172a; }}
-    .absent-banner {{ background: #422006; border: 1px solid #ca8a04; color: #fde68a; padding: 0.5rem 1rem; border-radius: 8px; margin-bottom: 1rem; }}
-    .present-summary {{ color: #94a3b8; margin: -0.5rem 0 1rem; font-size: 0.9rem; }}
-    .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }}
-    .card {{ background: #1e293b; border-radius: 12px; padding: 1rem; }}
-    .card strong {{ display: block; font-size: 1.4rem; margin-top: 0.25rem; }}
-    .chart-wrap {{ position: relative; height: 320px; margin-bottom: 1.5rem; background: #1e293b; border-radius: 12px; padding: 1rem; }}
+    *, *::before, *::after {{ box-sizing: border-box; }}
+    body {{
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0 auto;
+      padding: 1rem;
+      padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+      max-width: 1200px;
+      background: #0f172a;
+      color: #e2e8f0;
+    }}
+    h1 {{ margin: 0 0 0.25rem; font-size: clamp(1.1rem, 4.5vw, 1.75rem); line-height: 1.25; }}
+    .meta {{ color: #94a3b8; margin-bottom: 0.75rem; font-size: 0.9rem; line-height: 1.4; }}
+    .overview-hint {{ color: #94a3b8; margin: -0.25rem 0 0.5rem; font-size: 0.85rem; line-height: 1.4; }}
+    .absent-banner {{ background: #422006; border: 1px solid #ca8a04; color: #fde68a; padding: 0.5rem 0.75rem; border-radius: 8px; margin-bottom: 0.75rem; font-size: 0.9rem; line-height: 1.4; }}
+    .present-summary {{ color: #94a3b8; margin: 0 0 1rem; font-size: 0.85rem; line-height: 1.45; }}
+    .day-fallback {{
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }}
+    .day-fallback button {{
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      min-height: 40px;
+      padding: 0 0.75rem;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }}
+    .day-fallback button:hover {{ border-color: #38bdf8; }}
+    .day-fallback button:disabled {{ opacity: 0.35; cursor: default; }}
+    .day-fallback .day-label {{
+      flex: 1;
+      min-width: 200px;
+      text-align: left;
+      padding: 0 1rem;
+    }}
+    .picker-error {{
+      color: #fca5a5;
+      font-size: 0.85rem;
+      margin: -0.5rem 0 1rem;
+    }}
+    .cards {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.65rem;
+      margin-bottom: 1rem;
+    }}
+    @media (min-width: 720px) {{
+      .cards {{ gap: 1rem; }}
+      body {{ padding: 1.5rem; }}
+    }}
+    .card {{ background: #1e293b; border-radius: 12px; padding: 0.75rem; font-size: 0.85rem; }}
+    .card strong {{ display: block; font-size: clamp(1.1rem, 4vw, 1.4rem); margin-top: 0.2rem; }}
+    .chart-wrap {{
+      position: relative;
+      height: clamp(220px, 48vh, 380px);
+      margin-bottom: 1rem;
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 0.65rem;
+    }}
+    .chart-scroll {{
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+      margin-bottom: 1rem;
+      border-radius: 12px;
+    }}
+    .chart-scroll .chart-wrap--overview {{
+      height: clamp(200px, 36vh, 280px);
+      min-width: max(100%, calc(var(--day-count, 14) * 2.75rem));
+      margin-bottom: 0;
+    }}
     canvas {{ display: block; width: 100% !important; height: 100% !important; }}
-    h2 {{ font-size: 1rem; color: #94a3b8; margin: 0 0 0.5rem; }}
-    .chart-legend {{ font-size: 0.85rem; color: #a855f7; margin: -0.25rem 0 0.75rem; }}
-    .chart-legend span {{ display: inline-block; width: 0.9rem; height: 0.9rem; background: rgba(168, 85, 247, 0.35); border-radius: 2px; vertical-align: -0.1rem; margin-right: 0.35rem; }}
+    h2 {{ font-size: 0.95rem; color: #94a3b8; margin: 0 0 0.35rem; }}
+    .chart-legend {{ font-size: 0.8rem; color: #a855f7; margin: -0.15rem 0 0.5rem; line-height: 1.35; }}
+    .chart-legend span {{ display: inline-block; width: 0.85rem; height: 0.85rem; background: rgba(168, 85, 247, 0.35); border-radius: 2px; vertical-align: -0.1rem; margin-right: 0.3rem; }}
+    code {{ font-size: 0.8em; word-break: break-all; }}
   </style>
 </head>
 <body>
@@ -623,26 +775,41 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
   <p class="meta" id="meta"></p>
   <p id="absentBanner" class="absent-banner" hidden>Abwesend — niedriger Verbrauch erwartbar, nicht in Ø „anwesend“.</p>
   <p class="present-summary" id="presentSummary"></p>
-  <nav class="day-nav" id="dayNav" aria-label="Tag auswählen"></nav>
+  <div id="lulu-date-picker">
+    <div id="lulu-date-fallback" class="day-fallback" aria-label="Tag wählen">
+      <button type="button" id="fallbackPrev" aria-label="Vorheriger Tag">←</button>
+      <button type="button" id="fallbackLabel" class="day-label"></button>
+      <button type="button" id="fallbackNext" aria-label="Nächster Tag">→</button>
+    </div>
+  </div>
+  <p id="pickerError" class="picker-error" hidden></p>
   <div class="cards">
     <div class="card">Netzbezug<strong id="totalGrid"></strong></div>
     <div class="card">PV Erzeugung<strong id="totalPv"></strong></div>
     <div class="card">Hausverbrauch (geschätzt)<strong id="totalHouse"></strong></div>
     <div class="card">Eigenverbrauch PV<strong id="totalSelf"></strong></div>
+    <div class="card">0 Bezug (PV-Zeit)<strong id="totalZeroBezug"></strong></div>
   </div>
   <h2>Verbrauch &amp; Erzeugung über den Tag (W)</h2>
-  <p class="chart-legend"><span></span>Bezug ≈ 0 bei PV (evtl. Einspeisung)</p>
+  <p class="chart-legend" id="zeroBezugLegend"><span></span>Bezug ≈ 0 bei PV</p>
   <div class="chart-wrap"><canvas id="powerChart"></canvas></div>
   <h2>Energie pro 15 min (kWh)</h2>
   <div class="chart-wrap"><canvas id="intervalChart"></canvas></div>
   <h2>Tageswerte — alle Tage (kWh)</h2>
-  <p class="meta" style="margin-top: -0.5rem">Gestrichelt = abwesend (<code>imports/absent-days.txt</code>)</p>
-  <div class="chart-wrap" style="height: 220px"><canvas id="dailyChart"></canvas></div>
+  <p class="overview-hint">Grau = abwesend · Balken anklicken wechselt den Tag oben</p>
+  <div class="chart-scroll" id="dailyScroll">
+    <div class="chart-wrap chart-wrap--overview"><canvas id="dailyChart"></canvas></div>
+  </div>
   <script>
     const daysData = {days_json};
     const dayKeys = Object.keys(daysData).sort();
-    let currentDay = dayKeys[dayKeys.length - 1];
+    const hashDay = location.hash.slice(1);
+    let currentDay = daysData[hashDay] ? hashDay : dayKeys[dayKeys.length - 1];
     let powerChart, intervalChart, dailyChart;
+
+    function dayIndex(day) {{
+      return dayKeys.indexOf(day);
+    }}
 
     function presentDayKeys() {{
       return dayKeys.filter((day) => !daysData[day].absent);
@@ -667,34 +834,120 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
         ' kWh · Haus ' + avgPresent('house').toFixed(2) + ' kWh';
     }}
 
-    function barColors(presentColor, absentColor) {{
-      return dayKeys.map((day) => (daysData[day].absent ? absentColor : presentColor));
+    function barFill(day, metric) {{
+      const absent = daysData[day].absent;
+      const selected = day === currentDay;
+      if (metric === 'grid') {{
+        if (selected) return absent ? '#94a3b8' : '#fb923c';
+        return absent ? 'rgba(148,163,184,0.35)' : '#f97316';
+      }}
+      if (selected) return absent ? '#4ade80' : '#4ade80';
+      return absent ? 'rgba(34,197,94,0.25)' : '#22c55e';
+    }}
+
+    function dailyBarMeta() {{
+      return {{
+        backgroundColor: [
+          dayKeys.map((d) => barFill(d, 'grid')),
+          dayKeys.map((d) => barFill(d, 'pv')),
+        ],
+        borderColor: dayKeys.map((d) => (d === currentDay ? '#38bdf8' : 'transparent')),
+        borderWidth: dayKeys.map((d) => (d === currentDay ? 2 : 0)),
+      }};
+    }}
+
+    function isMobile() {{
+      return window.innerWidth < 640;
+    }}
+
+    function chartScales(mobile) {{
+      return {{
+        x: {{
+          ticks: {{
+            maxTicksLimit: mobile ? 8 : 24,
+            maxRotation: mobile ? 0 : 45,
+            minRotation: 0,
+            font: {{ size: mobile ? 10 : 12 }},
+          }},
+        }},
+        y: {{
+          ticks: {{ font: {{ size: mobile ? 10 : 12 }} }},
+        }},
+      }};
+    }}
+
+    function legendOpts(mobile) {{
+      return {{
+        position: 'bottom',
+        labels: {{
+          boxWidth: mobile ? 10 : 40,
+          padding: mobile ? 8 : 12,
+          font: {{ size: mobile ? 11 : 12 }},
+        }},
+      }};
     }}
 
     function makeChartOpts(spans) {{
+      const mobile = isMobile();
       return {{
         responsive: true,
         maintainAspectRatio: false,
         interaction: {{ mode: 'index', intersect: false }},
-        scales: {{ x: {{ ticks: {{ maxTicksLimit: 24 }} }} }},
+        scales: chartScales(mobile),
         plugins: {{
-          legend: {{ position: 'bottom' }},
+          legend: legendOpts(mobile),
           zeroBezugHighlight: {{ spans }},
         }},
       }};
     }}
 
-    const dailyChartOpts = {{
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {{ mode: 'index', intersect: false }},
-      scales: {{ x: {{ ticks: {{ maxTicksLimit: 24 }} }} }},
-      plugins: {{ legend: {{ position: 'bottom' }} }},
-    }};
+    function dailyChartOpts() {{
+      const mobile = isMobile();
+      const meta = dailyBarMeta();
+      return {{
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {{ mode: 'index', intersect: true }},
+        onHover: (event, elements) => {{
+          event.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+        }},
+        onClick: (_event, elements) => {{
+          if (!elements.length) return;
+          selectDay(dayKeys[elements[0].index], {{ scrollToTop: true }});
+        }},
+        scales: {{
+          x: {{
+            ticks: {{
+              maxRotation: mobile ? 45 : 0,
+              minRotation: mobile ? 45 : 0,
+              font: {{ size: mobile ? 9 : 12 }},
+            }},
+          }},
+          y: {{
+            ticks: {{ font: {{ size: mobile ? 10 : 12 }} }},
+          }},
+        }},
+        plugins: {{ legend: legendOpts(mobile) }},
+      }};
+    }}
+
+    function applyResponsiveCharts() {{
+      const mobile = isMobile();
+      const spans = daysData[currentDay].zeroBezugSpans || [];
+      [powerChart, intervalChart].forEach((chart) => {{
+        chart.options.scales = chartScales(mobile);
+        chart.options.plugins.legend = legendOpts(mobile);
+        chart.options.plugins.zeroBezugHighlight = {{ spans }};
+        chart.update();
+      }});
+      dailyChart.options = dailyChartOpts();
+      dailyChart.update();
+    }}
 
     {ZERO_BEZUG_CHART_JS}
 
     function initCharts() {{
+      const meta = dailyBarMeta();
       powerChart = new Chart(document.getElementById('powerChart'), {{
         type: 'line',
         data: {{ labels: [], datasets: [
@@ -718,13 +971,49 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
         data: {{
           labels: dayKeys.map((d) => d.slice(5)),
           datasets: [
-            {{ label: 'Bezug kWh', data: dayKeys.map((d) => daysData[d].totals.grid), backgroundColor: barColors('#f97316', 'rgba(148,163,184,0.35)') }},
-            {{ label: 'PV kWh', data: dayKeys.map((d) => daysData[d].totals.pv), backgroundColor: barColors('#22c55e', 'rgba(34,197,94,0.25)') }},
+            {{ label: 'Bezug kWh', data: dayKeys.map((d) => daysData[d].totals.grid), backgroundColor: meta.backgroundColor[0], borderColor: meta.borderColor, borderWidth: meta.borderWidth }},
+            {{ label: 'PV kWh', data: dayKeys.map((d) => daysData[d].totals.pv), backgroundColor: meta.backgroundColor[1], borderColor: meta.borderColor, borderWidth: meta.borderWidth }},
           ],
         }},
-        options: dailyChartOpts,
+        options: dailyChartOpts(),
       }});
     }}
+
+    document.getElementById('dailyScroll').style.setProperty('--day-count', dayKeys.length);
+
+    function updateDailyHighlight() {{
+      const meta = dailyBarMeta();
+      dailyChart.data.datasets[0].backgroundColor = meta.backgroundColor[0];
+      dailyChart.data.datasets[1].backgroundColor = meta.backgroundColor[1];
+      dailyChart.data.datasets.forEach((dataset) => {{
+        dataset.borderColor = meta.borderColor;
+        dataset.borderWidth = meta.borderWidth;
+      }});
+      dailyChart.update();
+    }}
+
+    function selectDay(day, {{ scrollToTop = false }} = {{}}) {{
+      if (!daysData[day]) return;
+      if (day !== currentDay) {{
+        currentDay = day;
+        history.replaceState(null, '', '#' + day);
+        showDay(day);
+        updateDailyHighlight();
+        updateFallbackNav();
+        window.__luluNotifyDayChange?.();
+      }}
+      if (scrollToTop) {{
+        document.getElementById('title').scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+      }}
+    }}
+
+    window.selectDay = selectDay;
+    window.__luluGetPickerState = () => ({{
+      dayKeys,
+      daysData,
+      currentDay,
+      onSelectDay: (day) => selectDay(day),
+    }});
 
     function showDay(day) {{
       const d = daysData[day];
@@ -737,6 +1026,10 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
       document.getElementById('totalPv').textContent = d.totals.pv.toFixed(2) + ' kWh';
       document.getElementById('totalHouse').textContent = d.totals.house.toFixed(2) + ' kWh';
       document.getElementById('totalSelf').textContent = d.totals.selfUsePct + ' %';
+      document.getElementById('totalZeroBezug').textContent = d.totals.zeroBezugPct + ' %';
+      document.getElementById('zeroBezugLegend').innerHTML =
+        '<span></span>Bezug ≈ 0 bei PV — ' + d.totals.zeroBezugPct +
+        '% der PV-Intervalle (evtl. Einspeisung)';
 
       const spans = d.zeroBezugSpans || [];
       powerChart.options.plugins.zeroBezugHighlight.spans = spans;
@@ -755,32 +1048,90 @@ def write_viewer_html(path: Path, days_data: dict[str, dict]) -> None:
       intervalChart.update();
     }}
 
-    function updateNav() {{
-      document.querySelectorAll('#dayNav button').forEach((btn) => {{
-        btn.classList.toggle('active', btn.dataset.day === currentDay);
-      }});
+    function updateFallbackNav() {{
+      const idx = dayIndex(currentDay);
+      const label = document.getElementById('fallbackLabel');
+      const prev = document.getElementById('fallbackPrev');
+      const next = document.getElementById('fallbackNext');
+      if (!label || !prev || !next) return;
+      label.textContent = currentDay + (daysData[currentDay]?.absent ? ' ✈' : '');
+      prev.disabled = idx <= 0;
+      next.disabled = idx >= dayKeys.length - 1;
     }}
 
-    const nav = document.getElementById('dayNav');
-    dayKeys.forEach((day) => {{
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.dataset.day = day;
-      btn.textContent = day.slice(5) + (daysData[day].absent ? ' ✈' : '');
-      if (daysData[day].absent) btn.classList.add('absent');
-      btn.title = daysData[day].absent ? day + ' — abwesend' : day;
-      btn.addEventListener('click', () => {{
-        currentDay = day;
-        showDay(day);
-        updateNav();
-      }});
-      nav.appendChild(btn);
+    function mountDatePickerWidget() {{
+      const el = document.getElementById('lulu-date-picker');
+      const err = document.getElementById('pickerError');
+      if (!el) return;
+
+      const script = document.createElement('script');
+      script.src = './assets/date-picker.js';
+      script.onload = () => {{
+        try {{
+          const picker = window.LuluDatePicker ?? globalThis.LuluDatePicker;
+          if (!picker?.mountDatePicker) {{
+            throw new Error('LuluDatePicker global missing');
+          }}
+          const fallback = document.getElementById('lulu-date-fallback');
+          if (fallback) fallback.remove();
+          window.__luluNotifyDayChange = picker.notifyDayChange;
+          picker.mountDatePicker(el, () => window.__luluGetPickerState());
+        }} catch (error) {{
+          if (err) {{
+            err.hidden = false;
+            err.textContent = 'Kalender konnte nicht laden: ' + error.message;
+          }}
+          console.error(error);
+        }}
+      }};
+      script.onerror = () => {{
+        if (err) {{
+          err.hidden = false;
+          err.textContent = 'Kalender-Script nicht gefunden (./assets/date-picker.js). merge-all.sh erneut ausführen.';
+        }}
+      }};
+      document.body.appendChild(script);
+    }}
+
+    document.getElementById('fallbackPrev')?.addEventListener('click', () => {{
+      const idx = dayIndex(currentDay);
+      if (idx > 0) selectDay(dayKeys[idx - 1]);
+    }});
+    document.getElementById('fallbackNext')?.addEventListener('click', () => {{
+      const idx = dayIndex(currentDay);
+      if (idx < dayKeys.length - 1) selectDay(dayKeys[idx + 1]);
+    }});
+
+    window.addEventListener('keydown', (event) => {{
+      if (event.target.closest('select, input, textarea, button')) return;
+      const idx = dayIndex(currentDay);
+      if (event.key === 'ArrowLeft' && idx > 0) {{
+        event.preventDefault();
+        selectDay(dayKeys[idx - 1]);
+      }} else if (event.key === 'ArrowRight' && idx < dayKeys.length - 1) {{
+        event.preventDefault();
+        selectDay(dayKeys[idx + 1]);
+      }}
+    }});
+
+    window.addEventListener('hashchange', () => {{
+      const day = location.hash.slice(1);
+      if (daysData[day]) selectDay(day);
     }});
 
     initCharts();
     updatePresentSummary();
+    history.replaceState(null, '', '#' + currentDay);
     showDay(currentDay);
-    updateNav();
+    updateDailyHighlight();
+    updateFallbackNav();
+    mountDatePickerWidget();
+
+    let resizeTimer;
+    window.addEventListener('resize', () => {{
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(applyResponsiveCharts, 150);
+    }});
   </script>
 </body>
 </html>
@@ -807,19 +1158,51 @@ def merge_day_intervals(day: str, imports_root: Path = IMPORTS_ROOT) -> list[Int
     return merge(read_smartvisio(smartvisio), read_hoymiles(hoymiles))
 
 
+def _write_day_csvs(days_map: dict[str, list[Interval]]) -> None:
+    for day, intervals in days_map.items():
+        out_dir = OUTPUT_ROOT / day
+        out_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = out_dir / "merged-energy.csv"
+        write_csv(csv_path, intervals)
+        print(f"wrote {csv_path} ({len(intervals)} intervals)")
+
+
+def _build_date_picker_assets() -> None:
+    if not (VIEWER_DIR / "package.json").is_file():
+        raise SystemExit(
+            "missing viewer/package.json — run: cd viewer && npm install && npm run build"
+        )
+    node_modules = VIEWER_DIR / "node_modules"
+    if not node_modules.is_dir():
+        subprocess.run(["npm", "install"], cwd=VIEWER_DIR, check=True)
+    subprocess.run(["npm", "run", "build"], cwd=VIEWER_DIR, check=True)
+
+
+def _sync_date_picker_assets() -> None:
+    if not DATE_PICKER_ASSETS.is_dir():
+        return
+    for target in (OUTPUT_ROOT, PAGES_INDEX.parent):
+        dest = target / "assets"
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(DATE_PICKER_ASSETS, dest)
+
+
 def refresh_viewer(imports_root: Path = IMPORTS_ROOT) -> Path | None:
-    days = discover_days(imports_root)
-    if not days:
+    days_map = collect_day_intervals(imports_root)
+    if not days_map:
         return None
     absent_days = load_absent_days(imports_root)
     days_data: dict[str, dict] = {}
-    for day in days:
-        payload = intervals_payload(merge_day_intervals(day, imports_root))
+    for day, intervals in days_map.items():
+        payload = intervals_payload(intervals)
         payload["absent"] = day in absent_days
         days_data[day] = payload
     viewer_path = OUTPUT_ROOT / "energy-report.html"
+    _build_date_picker_assets()
     write_viewer_html(viewer_path, days_data)
     write_viewer_html(PAGES_INDEX, days_data)
+    _sync_date_picker_assets()
     return viewer_path
 
 
@@ -852,33 +1235,38 @@ def run_merge(
 
 
 def run_all(imports_root: Path = IMPORTS_ROOT) -> None:
-    days = discover_days(imports_root)
-    if not days:
-        raise SystemExit(f"no import days found in {imports_root}")
+    days_map = collect_day_intervals(imports_root)
+    if not days_map:
+        raise SystemExit(f"no import days/weeks found in {imports_root}")
 
-    for day in days:
-        intervals = merge_day_intervals(day, imports_root)
-        out_dir = OUTPUT_ROOT / day
-        out_dir.mkdir(parents=True, exist_ok=True)
+    _write_day_csvs(days_map)
+
+    for name in discover_import_dirs(imports_root):
+        if not WEEK_DIR_RE.fullmatch(name):
+            continue
+        intervals = merge_day_intervals(name, imports_root)
+        out_dir = OUTPUT_ROOT / name
         csv_path = out_dir / "merged-energy.csv"
+        html_path = out_dir / "energy-report.html"
         write_csv(csv_path, intervals)
+        write_html(html_path, intervals, f"House Lulu — {name}")
         print(f"wrote {csv_path} ({len(intervals)} intervals)")
 
     viewer = refresh_viewer(imports_root)
     if viewer:
-        print(f"wrote {viewer} ({len(days)} days)")
+        print(f"wrote {viewer} ({len(days_map)} days)")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--day",
-        help="YYYY-MM-DD → imports/<day>/ → output/<day>/ + refresh viewer",
+        help="YYYY-MM-DD or YYYY-week-WW → imports/<name>/ → output + refresh viewer",
     )
     parser.add_argument(
         "--all",
         action="store_true",
-        help="merge all import days + output/energy-report.html viewer",
+        help="merge all import days/weeks + output/energy-report.html viewer",
     )
     parser.add_argument("--smartvisio", type=Path)
     parser.add_argument("--hoymiles", type=Path)
@@ -899,7 +1287,7 @@ def main() -> None:
     if args.day:
         smartvisio, hoymiles, out_dir = day_paths(args.day, args.imports_root)
         title = args.title or f"House Lulu — {args.day}"
-        run_merge(
+        intervals = run_merge(
             smartvisio,
             hoymiles,
             out_dir,
@@ -907,6 +1295,14 @@ def main() -> None:
             refresh_viewer_after=True,
             imports_root=args.imports_root,
         )
+        if WEEK_DIR_RE.fullmatch(args.day):
+            day_dirs = set(discover_days(args.imports_root))
+            extra = {
+                day: ivals
+                for day, ivals in split_by_day(intervals).items()
+                if day not in day_dirs
+            }
+            _write_day_csvs(extra)
         return
 
     if not args.smartvisio or not args.hoymiles:

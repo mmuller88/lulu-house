@@ -27,5 +27,5 @@ services:
       - scripts/merge_energy_exports.py
     command:
       - --day
-      - ${DAY:?set DAY=YYYY-MM-DD}
+      - ${DAY:?set DAY=YYYY-MM-DD or YYYY-week-WW}
     profiles: ["merge"]
