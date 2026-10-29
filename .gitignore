@@ -23,6 +23,9 @@ homeassistant/.HA_VERSION
 .env
 .homeassistant/
 
+# Mac/Docker Desktop only — host mode does not publish 8123. Linux house host must not use this.
+docker-compose.override.yml
+
 # Portal CSV exports + generated reports (keep examples + dated day folders)
 imports/*
 !imports/.gitkeep
@@ -36,3 +39,5 @@ output/*
 !docs/assets/
 viewer/node_modules/
 viewer/dist/
+
+.cache
